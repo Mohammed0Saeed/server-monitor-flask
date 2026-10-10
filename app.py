@@ -2,15 +2,17 @@
 import json
 import logging
 import os
+import platform
 import shutil
 import subprocess
+import sys
 import threading
 import time
 from collections import deque
 from datetime import datetime
 
 import psutil
-from flask import Flask, g, jsonify, render_template, request
+from flask import Flask, g, jsonify, request
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
@@ -51,7 +53,12 @@ def bar(pct, width=14):
     return f"{color_for(pct)}{'█' * filled}{C['d']}{'░' * (width - filled)}{C['r']}"
 
 
+TUI_MODE = False  # when the full-screen UI owns the terminal, nothing else may print
+
+
 def log(msg):
+    if TUI_MODE:
+        return
     print(f"{C['d']}{datetime.now():%H:%M:%S}{C['r']} {msg}", flush=True)
 
 
@@ -124,6 +131,46 @@ def read_watched():
     return list(found.values())
 
 
+def read_text(path):
+    try:
+        with open(path) as f:
+            return f.read().strip()
+    except OSError:
+        return None
+
+
+def read_system_info():
+    """Static device / OS details, collected once."""
+    try:
+        os_name = platform.freedesktop_os_release().get("PRETTY_NAME")
+    except OSError:
+        os_name = None
+    cpu_model = None
+    cpuinfo = read_text("/proc/cpuinfo") or ""
+    for line in cpuinfo.splitlines():
+        if line.startswith("model name"):
+            cpu_model = line.split(":", 1)[1].strip()
+            break
+    vendor, product = read_text("/sys/devices/virtual/dmi/id/sys_vendor"), read_text("/sys/devices/virtual/dmi/id/product_name")
+    ips = [f"{a.address} ({i})" for i, addrs in psutil.net_if_addrs().items() for a in addrs
+           if a.family.name == "AF_INET" and not a.address.startswith("127.")]
+    return {
+        "device": " ".join(x for x in (vendor, product) if x) or platform.node(),
+        "hostname": platform.node(),
+        "os": os_name or f"{platform.system()} {platform.release()}",
+        "kernel": platform.release(),
+        "arch": platform.machine(),
+        "cpu_model": cpu_model or platform.processor() or "unknown",
+        "physical_cores": psutil.cpu_count(logical=False),
+        "threads": psutil.cpu_count(),
+        "python": platform.python_version(),
+        "boot_time": datetime.fromtimestamp(psutil.boot_time()).strftime("%Y-%m-%d %H:%M"),
+        "ips": ips,
+        "user": os.environ.get("USER", ""),
+    }
+
+
+SYSTEM_INFO = read_system_info()
 STATS_LOCK = threading.Lock()
 LATEST = {}
 HISTORY = {k: deque(maxlen=60) for k in ("cpu", "ram", "temp")}
@@ -138,6 +185,8 @@ def collect():
         "time": datetime.now().strftime("%H:%M:%S"),
         "uptime": int(time.time() - STARTED),
         "hostname": os.uname().nodename,
+        "system": SYSTEM_INFO,
+        "swap": {"percent": psutil.swap_memory().percent},
         "cpu": {"percent": cpu, "cores": psutil.cpu_count(), "per_core": psutil.cpu_percent(percpu=True),
                 "freq": round(psutil.cpu_freq().current) if psutil.cpu_freq() else None,
                 "load": [round(x, 2) for x in os.getloadavg()]},
@@ -186,7 +235,7 @@ def collector_loop():
             LATEST.clear()
             LATEST.update(s)
         interval = CONFIG["console_interval"]
-        if interval and time.time() - last_banner >= interval:
+        if interval and not TUI_MODE and time.time() - last_banner >= interval:
             print_banner(s)
             last_banner = time.time()
 
@@ -241,7 +290,7 @@ def track(resp):
 # ------------------------------------------------------------------- routes ---
 @app.route("/")
 def index():
-    return render_template("index.html")
+    return jsonify({"service": "server-monitor", "endpoints": ["/api/stats", "/api/requests", "/api/ping"]})
 
 
 @app.route("/api/stats")
@@ -262,8 +311,26 @@ def api_ping():
     return jsonify({"ok": True, "echo": request.get_json(silent=True), "time": datetime.now().isoformat()})
 
 
-if __name__ == "__main__":
-    log(f"{C['b']}{C['cyn']}Server Monitor{C['r']} starting on http://0.0.0.0:{CONFIG['port']}  "
-        f"watching: {', '.join(CONFIG['watch_processes']) or '-'}")
+def main():
+    global TUI_MODE
+    plain = "--plain" in sys.argv or not sys.stdout.isatty()
     threading.Thread(target=collector_loop, daemon=True).start()
-    app.run(host="0.0.0.0", port=CONFIG["port"], debug=False, threaded=True)
+    if plain:  # no terminal UI: scrolling console log only
+        log(f"{C['b']}{C['cyn']}Server Monitor{C['r']} starting on http://0.0.0.0:{CONFIG['port']}  "
+            f"watching: {', '.join(CONFIG['watch_processes']) or '-'}")
+        app.run(host="0.0.0.0", port=CONFIG["port"], debug=False, threaded=True)
+        return
+    from werkzeug.serving import make_server
+    sys.modules.setdefault("app", sys.modules[__name__])  # tui's `import app` must share this module's state
+    import tui
+    TUI_MODE = True
+    server = make_server("0.0.0.0", CONFIG["port"], app, threaded=True)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        tui.run()
+    finally:
+        server.shutdown()
+
+
+if __name__ == "__main__":
+    main()
