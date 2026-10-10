@@ -15,23 +15,28 @@ from sky import Sky
 
 SPARK = "▁▂▃▄▅▆▇█"
 
+DARK = dict(bg="#0a0e1c", text="#e6ecff", strong="bold #ffffff", dim="#8b97c4", faint="#2a3150", border="#3b5bdb",
+            title="bold #6dd5ed", chart="#6aa8ff", ok="#37f2a0", warn="#ffcf4a", bad="#ff5470", bad_b="bold #ff5470",
+            accent="#c08bff", accent_b="bold #c08bff", web="#6aa8ff", tag="bold #0a0e1c on #6dd5ed")
+TH = DARK
+
 
 def tone(pct):
-    return "green" if pct < 60 else "yellow" if pct < 85 else "red"
+    return TH["ok"] if pct < 60 else TH["warn"] if pct < 85 else TH["bad"]
 
 
 def bar(pct, width=24):
     filled = round(width * min(max(pct, 0), 100) / 100)
     t = Text()
     t.append("█" * filled, tone(pct))
-    t.append("░" * (width - filled), "grey30")
+    t.append("░" * (width - filled), TH["faint"])
     t.append(f" {pct:5.1f}%", f"bold {tone(pct)}")
     return t
 
 
 def spark(values, hi=100, width=30):
     vals = list(values)[-width:]
-    return Text("".join(SPARK[min(7, int(max(v, 0) / hi * 7.99))] for v in vals), "cyan")
+    return Text("".join(SPARK[min(7, int(max(v, 0) / hi * 7.99))] for v in vals), TH["chart"])
 
 
 def gb(n):
@@ -46,18 +51,18 @@ def uptime(sec):
 
 
 def panel(body, title, **kw):
-    return Panel(body, title=f"[bold cyan]{title}[/]", title_align="left", border_style="blue", box=box.ROUNDED, **kw)
+    return Panel(body, title=f"[{TH['title']}]{title}[/]", title_align="left", border_style=TH["border"], box=box.ROUNDED,
+                 style=f"{TH['text']} on {TH['bg']}", **kw)
 
 
 def header(s):
     t = Text()
-    t.append(" SERVER MONITOR ", "bold bright_magenta")
-    t.append(f" {s['hostname']} ", "black on bright_cyan")
-    t.append(f"  up {uptime(s['uptime'])}", "grey70")
-    t.append(f"  {datetime.now():%H:%M:%S}", "grey70")
-    t.append(f"  port {app.CONFIG['port']}", "grey70")
-    t.append("   Ctrl+C to quit", "grey42")
-    return panel(t, "STATUS")
+    t.append(" SERVER MONITOR ", TH["accent_b"])
+    t.append(f" {s['hostname']} ", TH["tag"])
+    t.append(f"  up {uptime(s['uptime'])}", TH["dim"])
+    t.append(f"  {datetime.now():%H:%M:%S}", TH["dim"])
+    t.append(f"  port {app.CONFIG['port']}", TH["dim"])
+    return panel(t, "STATUS · Ctrl+C to quit")
 
 
 def sysinfo(s):
@@ -69,8 +74,8 @@ def sysinfo(s):
             ("IP", ", ".join(a.split(" ")[0] for a in i["ips"][:2]) or "-")]
     tbl = Table.grid(padding=(0, 1), expand=True)
     for _ in range(2):
-        tbl.add_column(style="grey62", no_wrap=True)
-        tbl.add_column(style="bold white", overflow="ellipsis", no_wrap=True, ratio=1)
+        tbl.add_column(style=TH["dim"], no_wrap=True)
+        tbl.add_column(style=TH["strong"], overflow="ellipsis", no_wrap=True, ratio=1)
     half = (len(rows) + 1) // 2
     for a, b in zip(rows[:half], rows[half:] + [("", "")]):
         tbl.add_row(*a, *b)
@@ -80,8 +85,8 @@ def sysinfo(s):
 class Chart:
     """History drawn as filled columns that grow to whatever height the panel gets."""
 
-    def __init__(self, values, hi=100, style="cyan"):
-        self.values, self.hi, self.style = list(values), hi, style
+    def __init__(self, values, hi=100, style=None):
+        self.values, self.hi, self.style = list(values), hi, style or TH["chart"]
 
     def __rich_console__(self, console, options):
         w, h = options.max_width, options.height or 3
@@ -99,7 +104,7 @@ def stack(*rows):
 
 
 def gauge(name, pct, sub, hist, extra=None):
-    rows = [(bar(pct), 1), (Text(sub, "grey62"), 1)]
+    rows = [(bar(pct), 1), (Text(sub, TH["dim"]), 1)]
     if extra:
         rows.append((extra, 1))
     rows.append((Chart(hist), None))
@@ -108,53 +113,53 @@ def gauge(name, pct, sub, hist, extra=None):
 
 def storage(s):
     st = s["storage"]
-    rows = [(bar(st["percent"]), 1), (Text(f"{gb(st['used'])} / {gb(st['total'])}", "grey62"), 1)]
+    rows = [(bar(st["percent"]), 1), (Text(f"{gb(st['used'])} / {gb(st['total'])}", TH["dim"]), 1)]
     for p in s["partitions"]:
         line = Text(no_wrap=True, overflow="ellipsis")
-        line.append(f"{p['mount']:<12.12} ", "grey70")
+        line.append(f"{p['mount']:<12.12} ", TH["dim"])
         line.append("█" * round(p["percent"] / 100 * 12), tone(p["percent"]))
-        line.append("░" * (12 - round(p["percent"] / 100 * 12)), "grey30")
-        line.append(f" {p['percent']:4.1f}% {gb(p['total'])}", "grey62")
+        line.append("░" * (12 - round(p["percent"] / 100 * 12)), TH["faint"])
+        line.append(f" {p['percent']:4.1f}% {gb(p['total'])}", TH["dim"])
         rows.append((line, 1))
     return panel(stack(*rows), "STORAGE")
 
 
 def cores(per_core):
-    return Text("".join(SPARK[min(7, int(p / 100 * 7.99))] for p in per_core), "bright_blue")
+    return Text("".join(SPARK[min(7, int(p / 100 * 7.99))] for p in per_core), TH["chart"])
 
 
 def temperature(s):
     t = s["temperature"]
     if t is None:
-        return panel(Text("n/a", "grey62"), "TEMPERATURE")
+        return panel(Text("n/a", TH["dim"]), "TEMPERATURE")
     pos = min(100, max(0, int(t)))
     gauge_line = Text()
     for i in range(24):
-        gauge_line.append("━", "green" if i < 12 else "yellow" if i < 18 else "red")
-    gauge_line.append(f"\n{' ' * int(pos / 100 * 23)}▲", "bold white")
-    return panel(stack((Text(f"{t} °C", f"bold {tone(t)}"), 1), (gauge_line, 2), (Chart(s["history"]["temp"], 110, "yellow"), None)),
+        gauge_line.append("━", TH["ok"] if i < 12 else TH["warn"] if i < 18 else TH["bad"])
+    gauge_line.append(f"\n{' ' * int(pos / 100 * 23)}▲", TH["strong"])
+    return panel(stack((Text(f"{t} °C", f"bold {tone(t)}"), 1), (gauge_line, 2), (Chart(s["history"]["temp"], 110, TH["warn"]), None)),
                  "TEMPERATURE")
 
 
 def battery(s):
     b = s["battery"]
     if not b:
-        return panel(Text("AC powered", "grey62"), "BATTERY")
+        return panel(Text("AC powered", TH["dim"]), "BATTERY")
     left = f" · {b['minutes_left'] // 60}h {b['minutes_left'] % 60}m left" if b["minutes_left"] else ""
     pct = b["percent"]
     t = Text()
-    t.append("█" * round(pct / 100 * 20), "green" if pct > 40 else "yellow" if pct > 20 else "red")
-    t.append("░" * (20 - round(pct / 100 * 20)), "grey30")
+    t.append("█" * round(pct / 100 * 20), TH["ok"] if pct > 40 else TH["warn"] if pct > 20 else TH["bad"])
+    t.append("░" * (20 - round(pct / 100 * 20)), TH["faint"])
     t.append(f" {pct}%", "bold")
-    return panel(Group(t, Text("plugged in" if b["plugged"] else "on battery" + left, "grey62")), "BATTERY")
+    return panel(Group(t, Text("plugged in" if b["plugged"] else "on battery" + left, TH["dim"])), "BATTERY")
 
 
 def watched(s):
     t = Table.grid(padding=(0, 1))
     for w in s["watched"]:
-        t.add_row(Text("*", "green" if w["running"] else "red"), w["name"],
-                  Text(f"{w['count']}× {w['cpu']}% cpu {w['mem']:.1f}% mem" if w["running"] else "not running", "grey62"))
-    return panel(t if s["watched"] else Text("set watch_processes in config.json", "grey62"), "WATCHED PROCESSES")
+        t.add_row(Text("*", TH["ok"] if w["running"] else TH["bad"]), w["name"],
+                  Text(f"{w['count']}× {w['cpu']}% cpu {w['mem']:.1f}% mem" if w["running"] else "not running", TH["dim"]))
+    return panel(t if s["watched"] else Text("set watch_processes in config.json", TH["dim"]), "WATCHED PROCESSES")
 
 
 def devices(s):
@@ -162,7 +167,7 @@ def devices(s):
     for d in s["devices"]["usb"]:
         t.add_row("USB", Text(d, overflow="ellipsis", no_wrap=True))
     for n in s["devices"]["network"]:
-        t.add_row("LAN", Text(f"{n['ip']}  {n['mac']}", style="grey70", no_wrap=True))
+        t.add_row("LAN", Text(f"{n['ip']}  {n['mac']}", style=TH["dim"], no_wrap=True))
     d = s["devices"]
     return panel(t, f"CONNECTED DEVICES · {len(d['usb'])} USB · {len(d['network'])} LAN")
 
@@ -172,21 +177,21 @@ def api_calls():
         totals, reqs = dict(app.TOTALS), list(app.REQUESTS)[:30]
     head = Text()
     head.append(f"{totals['total']} total  ", "bold")
-    head.append(f"{totals['automation']} automation  ", "bold magenta")
-    head.append(f"{totals['errors']} errors", "bold red")
+    head.append(f"{totals['automation']} automation  ", TH["accent_b"])
+    head.append(f"{totals['errors']} errors", TH["bad_b"])
     lines = [head]
     for r in reqs:
-        st = "green" if r["status"] < 400 else "yellow" if r["status"] < 500 else "red"
+        st = TH["ok"] if r["status"] < 400 else TH["warn"] if r["status"] < 500 else TH["bad"]
         line = Text(no_wrap=True, overflow="ellipsis")
-        line.append(f"{r['time']} ", "grey50")
-        line.append("AUTO " if r["source"] == "automation" else "WEB  ", "magenta" if r["source"] == "automation" else "blue")
+        line.append(f"{r['time']} ", TH["dim"])
+        line.append("AUTO " if r["source"] == "automation" else "WEB  ", TH["accent"] if r["source"] == "automation" else TH["web"])
         line.append(f"{r['method']:<5} ", "bold")
         line.append(f"{r['path']} ")
         line.append(f"{r['status']} ", st)
-        line.append(f"{r['ms']}ms {r['caller']}", "grey50")
+        line.append(f"{r['ms']}ms {r['caller']}", TH["dim"])
         lines.append(line)
     if not reqs:
-        lines.append(Text("waiting for API calls...", "grey50"))
+        lines.append(Text("waiting for API calls...", TH["dim"]))
     return panel(Group(*lines), "API CALLS")
 
 
@@ -217,12 +222,16 @@ def update(root, s, sky_panel):
     root["sky"].update(sky_panel)
 
 
+def sky_panel_for(sky):
+    return Panel(sky, title=f"[{TH['title']}]NIGHT SKY[/]", subtitle=f"[{TH['dim']}]{sky.subtitle}[/]", border_style=TH["border"],
+                 box=box.ROUNDED, style=f"{TH['text']} on {TH['bg']}")
+
+
 def run():
     console = Console()
     root, sky = build_layout(), Sky()
-    sky_panel = Panel(sky, title="[bold bright_yellow]NIGHT SKY[/]", border_style="blue", box=box.ROUNDED)
     stats = app.collect()
-    update(root, stats, sky_panel)
+    update(root, stats, sky_panel_for(sky))
     last = time.time()
     # One refresh per frame (auto_refresh off) and the stats panels rebuilt only once a second:
     # redrawing everything at a high rate is what made the screen shake.
@@ -232,10 +241,10 @@ def run():
                 if time.time() - last >= 1:
                     with app.STATS_LOCK:
                         stats = dict(app.LATEST) or stats
-                    update(root, stats, sky_panel)
+                    update(root, stats, sky_panel_for(sky))
                     last = time.time()
-                sky_panel.subtitle = f"[bright_yellow]{sky.subtitle}[/]"
+                root["sky"].update(sky_panel_for(sky))
                 live.refresh()
-                time.sleep(1 / 6)
+                time.sleep(1 / 8)
         except KeyboardInterrupt:
             pass
