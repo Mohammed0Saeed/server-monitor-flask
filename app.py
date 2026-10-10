@@ -171,9 +171,24 @@ def read_system_info():
 
 
 SYSTEM_INFO = read_system_info()
+def read_partitions():
+    parts, seen = [], set()
+    for p in psutil.disk_partitions():
+        if p.mountpoint in seen or p.mountpoint.startswith(("/snap", "/boot/efi", "/var/lib/docker")):
+            continue
+        seen.add(p.mountpoint)
+        try:
+            u = psutil.disk_usage(p.mountpoint)
+        except OSError:
+            continue
+        if u.total > 0:
+            parts.append({"mount": p.mountpoint, "percent": u.percent, "used": u.used, "total": u.total})
+    return parts[:8]
+
+
 STATS_LOCK = threading.Lock()
 LATEST = {}
-HISTORY = {k: deque(maxlen=60) for k in ("cpu", "ram", "temp")}
+HISTORY = {k: deque(maxlen=120) for k in ("cpu", "ram", "temp")}
 STARTED = time.time()
 
 
@@ -192,6 +207,7 @@ def collect():
                 "load": [round(x, 2) for x in os.getloadavg()]},
         "ram": {"percent": vm.percent, "used": vm.used, "total": vm.total},
         "storage": {"percent": round(disk.used / disk.total * 100, 1), "used": disk.used, "total": disk.total},
+        "partitions": read_partitions(),
         "temperature": temp,
         "battery": read_battery(),
         "devices": {"usb": read_usb(), "network": read_network_clients()},
