@@ -13,7 +13,13 @@ PHASE_NAMES = [(.03, "New Moon"), (.22, "Waxing Crescent"), (.28, "First Quarter
                (.53, "Full Moon"), (.72, "Waning Gibbous"), (.78, "Last Quarter"), (.97, "Waning Crescent")]
 
 SKY_TOP, SKY_BOT = (2, 3, 12), (26, 30, 70)
-STAR_TINTS = [(255, 255, 255), (200, 220, 255), (255, 240, 200), (255, 210, 190)]
+# Spectral classes with rough visible-sky frequency, colours pushed a little past true so they read in a terminal
+STAR_TINTS = ([(140, 170, 255)] * 12   # B  blue-white
+              + [(205, 220, 255)] * 22  # A  white
+              + [(255, 250, 240)] * 14  # F  yellow-white
+              + [(255, 235, 140)] * 16  # G  yellow (like the Sun)
+              + [(255, 190, 110)] * 24  # K  orange
+              + [(255, 130, 90)] * 12)  # M  red
 
 
 def moon_phase(now=None):
@@ -83,7 +89,7 @@ class Sky:
 
         for x, y, ph, sp, tint in self.stars:
             v = math.sin(now * sp + ph)
-            lvl = 1 if v > .5 else .65 if v > -.4 else .4
+            lvl = 1 if v > .5 else .8 if v > -.4 else .55
             put(x, y, "*" if v > .85 else "+" if v > .5 else "." if v > -.4 else "·", mix((0, 0, 0), tint, lvl))
 
         self._moon(put, rows)

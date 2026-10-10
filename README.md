@@ -10,7 +10,8 @@ Use a terminal of at least ~120x40 for the best view.
 
 ## Screen
 - **Left 60%:** device & OS info, CPU / memory / storage gauges with history, temperature, battery,
-  watched processes, connected devices (USB + LAN) and the live API call feed.
+  watched processes, connected devices (USB + LAN), the live API call feed and a Gregorian + Hijri
+  (Umm al-Qura) month calendar with today highlighted.
 - **Right 40%:** an animated starry night: twinkling stars, the moon in its real current phase, and random meteors.
 
 Edit `config.json` for the port, console interval and `watch_processes` (name substrings).

@@ -1,7 +1,9 @@
 """Full-screen terminal dashboard: system details on the left (60%), night sky on the right (40%)."""
 import time
-from datetime import datetime
+import calendar
+from datetime import date, datetime
 
+from hijridate import Gregorian, Hijri
 from rich import box
 from rich.console import Console, Group
 from rich.layout import Layout
@@ -195,6 +197,37 @@ def api_calls():
     return panel(Group(*lines), "API CALLS")
 
 
+WEEKDAYS = "Su Mo Tu We Th Fr Sa"
+
+
+def month_grid(title, first_weekday_sun0, length, today_day):
+    """One month as text. first_weekday_sun0: weekday of day 1 with Sunday = 0."""
+    out = [Text(title, TH["strong"]), Text(WEEKDAYS, TH["dim"])]
+    cells = [None] * first_weekday_sun0 + list(range(1, length + 1))
+    for i in range(0, len(cells), 7):
+        line = Text()
+        for j, d in enumerate(cells[i:i + 7]):
+            style = f"bold {TH['bg']} on {TH['chart']}" if d == today_day else TH["text"] if j not in (5, 6) else TH["dim"]
+            line.append(f"{d:>2}" if d else "  ", style)
+            line.append(" " if j < 6 else "")
+        out.append(line)
+    return out
+
+
+def calendars():
+    today = date.today()
+    hj = Gregorian(today.year, today.month, today.day).to_hijri()
+    first = date(today.year, today.month, 1)
+    greg = month_grid(f"{calendar.month_name[today.month]} {today.year}", (first.weekday() + 1) % 7,
+                      calendar.monthrange(today.year, today.month)[1], today.day)
+    h1 = Hijri(hj.year, hj.month, 1).to_gregorian()
+    hijri = month_grid(f"{hj.month_name()} {hj.year} AH", (h1.weekday() + 1) % 7, hj.month_length(), hj.day)
+    today_line = Text(f"{today:%A, %d %B %Y}\n{hj.day} {hj.month_name()} {hj.year} AH", TH["dim"], no_wrap=True, overflow="ellipsis")
+    grids = Table.grid(padding=(0, 2))
+    grids.add_row(Group(*greg), Group(*hijri))
+    return panel(Group(grids, Text(""), today_line), "CALENDAR · GREGORIAN / HIJRI")
+
+
 def build_layout():
     root = Layout()
     root.split_row(Layout(name="left", ratio=6), Layout(name="sky", ratio=4))
@@ -202,7 +235,7 @@ def build_layout():
                               Layout(name="mid", ratio=2, minimum_size=7), Layout(name="bottom", ratio=3, minimum_size=6))
     root["gauges"].split_row(Layout(name="cpu"), Layout(name="ram"), Layout(name="disk"))
     root["mid"].split_row(Layout(name="temp"), Layout(name="bat"), Layout(name="watch"))
-    root["bottom"].split_row(Layout(name="dev"), Layout(name="api"))
+    root["bottom"].split_row(Layout(name="dev"), Layout(name="api"), Layout(name="cal", size=48))
     return root
 
 
@@ -219,6 +252,7 @@ def update(root, s, sky_panel):
     root["watch"].update(watched(s))
     root["dev"].update(devices(s))
     root["api"].update(api_calls())
+    root["cal"].update(calendars())
     root["sky"].update(sky_panel)
 
 

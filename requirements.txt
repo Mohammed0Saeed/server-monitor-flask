@@ -1,3 +1,4 @@
 flask>=3.1
 psutil>=7.2
 rich>=14
+hijridate>=2.6
